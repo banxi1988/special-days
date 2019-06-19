@@ -1,5 +1,7 @@
 #include <fcntl.h>
+#include <locale.h>
 #include <math.h>
+#include <ncurses.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -9,22 +11,22 @@
 #include <time.h>
 #include <unistd.h>
 #include "codetalks.h"
+#include "cui.h"
 
 // 特殊日子类型,
 typedef enum DayKind {
-  BIRTH,     // 生日
-  MEMO,      // 纪念日
-  COUNTDOWN  // 倒数日
-
+  DayKindBirth,     // 生日
+  DayKindMemo,      // 纪念日
+  DayKindCountdown  // 倒数日
 } DayKind;
 
 char *day_kind_to_text(DayKind kind) {
   switch (kind) {
-    case BIRTH:
+    case DayKindBirth:
       return "生日";
-    case MEMO:
+    case DayKindMemo:
       return "纪念日";
-    case COUNTDOWN:
+    case DayKindCountdown:
       return "倒数日";
     default:
       return "未知";
@@ -104,28 +106,47 @@ bool add_special_day(SpecialDay day) {
   return true;
 }
 void print_divider() {
-  printf(
-      "+-----------------------------------------------------------------------"
-      "--------+\n");
+  cui_print_line(
+      "+-------------------------------------------------------------------"
+      "------------+\n",
+      TextStyleBorder);
 }
 void print_header() {
   print_divider();
-  printf("%-8s%-12s%-24s%-24s%12s\n", "序号", "记数(天)", "日期", "名称",
-         "类型");
+  char buf[120];
+  snprintf(buf, sizeof(buf), "%-8s%-12s%-24s%-24s%12s\n", "序号", "记数(天)",
+           "日期", "名称", "类型");
+  cui_print_line(buf, TextStyleSubhead);
   print_divider();
 }
 
-void print_special_day(SpecialDay day, int no) {
-  int days = days_since_date(day.date);
-  printf("%-8d%-12d%-24s%-24s%12s\n", no, days, day.date, day.name,
-         day_kind_to_text(day.kind));
+TextStyle day_kind_to_text_style(DayKind kind) {
+  switch (kind) {
+    case DayKindMemo:
+      return TextStyleMemo;
+    case DayKindBirth:
+      return TextStyleBirth;
+    case DayKindCountdown:
+      return TextStyleCountdown;
+    default:
+      return TextStyleBody;
+  }
+}
+
+void print_special_day(SpecialDay *day, int no) {
+  int days = days_since_date(day->date);
+  char buf[120];
+  snprintf(buf, sizeof(buf), "%-8d%-12d%-24s%-24s%12s\n", no, days, day->date,
+           day->name, day_kind_to_text(day->kind));
+
+  cui_print_line(buf, day_kind_to_text_style(day->kind));
   print_divider();
 }
 
 void list_special_days() {
   print_header();
   for (int i = 0; i < service.count; i++) {
-    print_special_day(service.specialDays[i], i + 1);
+    print_special_day(&service.specialDays[i], i + 1);
   }
 }
 
@@ -169,12 +190,18 @@ void load_all() {
 }
 
 int main(int argc, char const *argv[]) {
+  setlocale(LC_ALL, "");  // 使用环境变量的设置
   service.fd = open("days.data", O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
   if (service.fd == -1) {
     ct_exit("days.data 打开出错.");
     return -1;
   }
   load_all();
+  WINDOW *win = initscr();  // 初始化当前窗口
+  start_color();            // 使用颜色
+  cui_init_colors();
+  cbreak();  // 禁用输入缓冲
+  noecho();  // 禁用回显
   // add_special_day(
   //     (SpecialDay){.date = "2010-07-22", .name = "相遇", .kind = MEMO});
   // add_special_day(
@@ -185,5 +212,21 @@ int main(int argc, char const *argv[]) {
   //     (SpecialDay){.date = "2018-09-18", .name = "小月儿", .kind = BIRTH});
   // persist_all();
   list_special_days();
+  int ch;
+  nodelay(stdscr, TRUE);
+  for (;;) {
+    ch = getch();
+    if (ch == ERR) {
+    } else {
+      // printf("User input:%c\n", ch);
+      switch (ch) {
+        case 'q':
+          printw("Bye Bye!");
+          break;
+      }
+    }
+  }
+
+  endwin();  // 恢复终端设置
   return 0;
 }
